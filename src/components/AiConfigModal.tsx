@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { AiConfig } from '../types/ai';
 import { OllamaStatus } from '../types/sentinel';
-import { PROVIDER_PRESETS } from '../services/aiConfig';
+import { PROVIDER_PRESETS, isUsingOfficialGateway } from '../services/aiConfig';
 import { testAiConnection } from '../services/llmClient';
 import { probeOllama } from '../services/tauri-bridge';
 import { setAppLanguage } from '../i18n';
@@ -138,6 +138,19 @@ export const AiConfigModal: React.FC<AiConfigModalProps> = ({
 
         {/* Body */}
         <div className="p-6 space-y-5 overflow-y-auto max-h-[70vh] text-xs font-mono">
+          {/* Official Gateway Banner */}
+          <div className="p-3.5 rounded-xl bg-emerald-950/30 border border-emerald-500/30 flex items-start gap-2.5 text-emerald-200">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+            <div className="space-y-0.5 font-sans">
+              <div className="font-semibold text-xs text-emerald-300">
+                {t('aiConfig.officialGatewayTitle')}
+              </div>
+              <div className="text-[11px] text-slate-300 leading-relaxed">
+                {t('aiConfig.officialGatewayDesc')}
+              </div>
+            </div>
+          </div>
+
           {/* Language Selector */}
           <div className="p-3.5 rounded-xl bg-[#080b13] border border-white/[0.08]">
             <label className="text-slate-300 font-medium flex items-center gap-1.5 mb-2">
@@ -226,7 +239,7 @@ export const AiConfigModal: React.FC<AiConfigModalProps> = ({
                 type={showApiKey ? 'text' : 'password'}
                 value={currentConfig.apiKey}
                 onChange={(e) => setCurrentConfig({ ...currentConfig, apiKey: e.target.value })}
-                placeholder="sk-..."
+                placeholder={isUsingOfficialGateway(currentConfig) ? t('aiConfig.apiKeyPlaceholder') : 'sk-...'}
                 className="w-full pl-3.5 pr-10 py-2.5 rounded-xl bg-[#080b13] border border-white/[0.1] text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/40 font-mono"
               />
               <button

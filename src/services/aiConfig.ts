@@ -2,10 +2,24 @@ import { AiConfig, ProviderPreset } from '../types/ai';
 
 const AI_CONFIG_STORAGE_KEY = 'netpath_lens_ai_config_v1';
 
+export const OFFICIAL_DEEPSEEK_GATEWAY = 'https://bin0sky.tech/api/ai';
+
+export function isUsingOfficialGateway(config: AiConfig): boolean {
+  if (config.apiKey && config.apiKey.trim()) return false;
+  const base = (config.apiBaseUrl || '').trim().toLowerCase();
+  if (!base) return true;
+  const isLocalOllama =
+    base.includes('127.0.0.1') ||
+    base.includes('localhost') ||
+    base.includes('::1') ||
+    base.includes('11434');
+  return !isLocalOllama;
+}
+
 export const DEFAULT_AI_CONFIG: AiConfig = {
-  apiBaseUrl: 'https://api.deepseek.com',
+  apiBaseUrl: 'https://api.deepseek.com/v1',
   apiKey: '',
-  model: 'deepseek-chat',
+  model: 'deepseek-v4-flash',
   temperature: 0.2,
   anonymizeData: true,
   ollamaEnabled: true,
@@ -16,9 +30,9 @@ export const DEFAULT_AI_CONFIG: AiConfig = {
 export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     name: 'DeepSeek',
-    baseUrl: 'https://api.deepseek.com',
-    defaultModel: 'deepseek-chat',
-    description: 'DeepSeek V3 高性价比深度推理模型',
+    baseUrl: 'https://api.deepseek.com/v1',
+    defaultModel: 'deepseek-v4-flash',
+    description: '已内置官方免配引擎 (留空 Key 即享免费诊断)',
   },
   {
     name: 'SiliconFlow (硅基流动)',

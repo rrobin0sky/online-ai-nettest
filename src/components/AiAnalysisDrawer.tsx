@@ -24,6 +24,7 @@ import Markdown from 'markdown-to-jsx';
 import { CompleteDiagnosticReport } from '../types';
 import { AiConfig, AiAnalysisStatus, ChatMessage } from '../types/ai';
 import { formatTelemetryForAI } from '../services/telemetrySanitizer';
+import { isUsingOfficialGateway } from '../services/aiConfig';
 import type { BaselineDiffResult } from '../services/baselineDiff';
 import {
   streamAiMultiTurnChat,
@@ -263,7 +264,11 @@ export const AiAnalysisDrawer: React.FC<AiAnalysisDrawerProps> = ({
                   {t('aiChat.title')}
                 </h3>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950/80 border border-cyan-500/30 text-cyan-300">
-                  {config.model}
+                  {isUsingOfficialGateway(config)
+                    ? isZh
+                      ? `${config.model || 'deepseek-v4-flash'} · 官方免配`
+                      : `${config.model || 'deepseek-v4-flash'} · Built-in Free`
+                    : config.model}
                 </span>
               </div>
               <p className="text-xs text-slate-400 font-mono mt-0.5">

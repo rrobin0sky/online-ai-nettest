@@ -1,4 +1,5 @@
 import { AiConfig, ChatMessage } from '../types/ai';
+import { OFFICIAL_DEEPSEEK_GATEWAY, isUsingOfficialGateway } from './aiConfig';
 import { probeOllama } from './tauri-bridge';
 import i18n from '../i18n';
 
@@ -37,24 +38,50 @@ function normalizeBaseUrl(url: string): string {
 }
 
 /**
+ * Extract readable error message from API response body
+ */
+async function extractApiErrorMessage(response: Response): Promise<string> {
+  const errText = await response.text().catch(() => '');
+  if (!errText) return '';
+  try {
+    const parsed = JSON.parse(errText);
+    const msg = parsed?.error?.message || (typeof parsed?.error === 'string' ? parsed.error : '') || parsed?.message;
+    if (msg) return String(msg);
+  } catch {
+    // Plain text fallback
+  }
+  return errText.slice(0, 200);
+}
+
+/**
  * Test AI endpoint connection with a minimal prompt
  */
 export async function testAiConnection(
   config: AiConfig
 ): Promise<{ success: boolean; message: string }> {
   const isZh = i18n.language ? i18n.language.startsWith('zh') : true;
+  const useGateway = isUsingOfficialGateway(config);
   const baseUrl = normalizeBaseUrl(config.apiBaseUrl);
-  const endpoint = `${baseUrl}/chat/completions`;
+  const endpoint = useGateway
+    ? `${OFFICIAL_DEEPSEEK_GATEWAY}/chat/completions`
+    : `${baseUrl}/chat/completions`;
+  const ALLOWED_GATEWAY_MODELS = ['deepseek-v4-flash', 'deepseek-chat', 'deepseek-reasoner', 'deepseek-v4-pro'];
+  const modelName = useGateway
+    ? ALLOWED_GATEWAY_MODELS.includes(config.model.trim())
+      ? config.model.trim()
+      : 'deepseek-v4-flash'
+    : config.model.trim();
 
   try {
     const response = await fetch(endpoint, {
       method: 'POST',
+      ...(useGateway ? { credentials: 'include' as RequestCredentials } : {}),
       headers: {
         'Content-Type': 'application/json',
-        ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey.trim()}` } : {}),
+        ...(!useGateway && config.apiKey ? { Authorization: `Bearer ${config.apiKey.trim()}` } : {}),
       },
       body: JSON.stringify({
-        model: config.model.trim(),
+        model: modelName,
         messages: [{ role: 'user', content: 'Ping' }],
         max_tokens: 5,
         temperature: 0,
@@ -65,8 +92,20 @@ export async function testAiConnection(
       return {
         success: true,
         message: isZh
-          ? `连接成功！模型 [${config.model}] 响应正常。`
-          : `Connection successful! Model [${config.model}] is responsive.`,
+          ? useGateway
+            ? `连接成功！官方内置 [${modelName}] 引擎响应正常。`
+            : `连接成功！模型 [${modelName}] 响应正常。`
+          : useGateway
+          ? `Connection successful! Built-in [${modelName}] gateway is responsive.`
+          : `Connection successful! Model [${modelName}] is responsive.`,
+      };
+    }
+
+    const extractedErr = await extractApiErrorMessage(response);
+    if (extractedErr) {
+      return {
+        success: false,
+        message: extractedErr,
       };
     }
 
@@ -82,8 +121,8 @@ export async function testAiConnection(
       return {
         success: false,
         message: isZh
-          ? `未找到指定模型或路径 (404 Not Found)：请确认模型名 [${config.model}] 及 Base URL 是否正确。`
-          : `Model or endpoint not found (404 Not Found): Check model [${config.model}] and Base URL.`,
+          ? `未找到指定模型或路径 (404 Not Found)：请确认模型名 [${modelName}] 及 Base URL 是否正确。`
+          : `Model or endpoint not found (404 Not Found): Check model [${modelName}] and Base URL.`,
       };
     }
     if (response.status === 429) {
@@ -95,12 +134,11 @@ export async function testAiConnection(
       };
     }
 
-    const errText = await response.text().catch(() => '');
     return {
       success: false,
       message: isZh
-        ? `接口返回异常状态码 HTTP ${response.status}: ${errText.slice(0, 150)}`
-        : `API returned error HTTP ${response.status}: ${errText.slice(0, 150)}`,
+        ? `接口返回异常状态码 HTTP ${response.status}`
+        : `API returned error HTTP ${response.status}`,
     };
   } catch (err: any) {
     return {
@@ -217,28 +255,39 @@ export async function streamAiMultiTurnChat(options: StreamMultiTurnChatOptions)
     ...recentMessages,
   ];
 
+  const useGateway = isUsingOfficialGateway(config);
   const primaryBaseUrl = normalizeBaseUrl(config.apiBaseUrl);
-  const primaryEndpoint = `${primaryBaseUrl}/chat/completions`;
+  const primaryEndpoint = useGateway
+    ? `${OFFICIAL_DEEPSEEK_GATEWAY}/chat/completions`
+    : `${primaryBaseUrl}/chat/completions`;
+  const ALLOWED_GATEWAY_MODELS = ['deepseek-v4-flash', 'deepseek-chat', 'deepseek-reasoner', 'deepseek-v4-pro'];
+  const primaryModel = useGateway
+    ? ALLOWED_GATEWAY_MODELS.includes(config.model.trim())
+      ? config.model.trim()
+      : 'deepseek-v4-flash'
+    : config.model.trim();
 
-  // Step 1: Attempt primary cloud LLM with 5000ms connection timeout
+  // Step 1: Attempt primary cloud LLM with 15000ms connection timeout
   let primaryFailed = false;
   let primaryErrorMsg = '';
+  let timer: ReturnType<typeof setTimeout> | undefined;
 
   try {
     const timeoutCtrl = new AbortController();
     if (signal) {
       signal.addEventListener('abort', () => timeoutCtrl.abort());
     }
-    const timer = setTimeout(() => timeoutCtrl.abort(), 5000);
+    timer = setTimeout(() => timeoutCtrl.abort(), 15000);
 
     const response = await fetch(primaryEndpoint, {
       method: 'POST',
+      ...(useGateway ? { credentials: 'include' as RequestCredentials } : {}),
       headers: {
         'Content-Type': 'application/json',
-        ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey.trim()}` } : {}),
+        ...(!useGateway && config.apiKey ? { Authorization: `Bearer ${config.apiKey.trim()}` } : {}),
       },
       body: JSON.stringify({
-        model: config.model.trim(),
+        model: primaryModel,
         messages: apiMessages,
         temperature: config.temperature,
         stream: true,
@@ -248,6 +297,10 @@ export async function streamAiMultiTurnChat(options: StreamMultiTurnChatOptions)
     clearTimeout(timer);
 
     if (!response.ok) {
+      const extractedErr = await extractApiErrorMessage(response);
+      if (extractedErr) {
+        throw new Error(extractedErr);
+      }
       if (response.status === 401) {
         throw new Error(
           isZh
@@ -258,8 +311,8 @@ export async function streamAiMultiTurnChat(options: StreamMultiTurnChatOptions)
       if (response.status === 404) {
         throw new Error(
           isZh
-            ? `模型 [${config.model}] 未找到 (404 Not Found)。请检查模型名称与 API 端点。`
-            : `Model [${config.model}] not found (404 Not Found). Check model name and endpoint.`
+            ? `模型 [${primaryModel}] 未找到 (404 Not Found)。请检查模型名称与 API 端点。`
+            : `Model [${primaryModel}] not found (404 Not Found). Check model name and endpoint.`
         );
       }
       if (response.status === 429) {
@@ -269,13 +322,13 @@ export async function streamAiMultiTurnChat(options: StreamMultiTurnChatOptions)
             : 'Rate limit or quota exceeded (429 Too Many Requests). Please retry later.'
         );
       }
-      const errBody = await response.text().catch(() => '');
-      throw new Error(`API error (HTTP ${response.status}): ${errBody.slice(0, 200)}`);
+      throw new Error(`API error (HTTP ${response.status})`);
     }
 
     await streamSseResponse(response, onToken, onComplete);
     return;
   } catch (err: any) {
+    if (timer !== undefined) clearTimeout(timer);
     if (signal?.aborted) {
       onComplete('');
       return;
